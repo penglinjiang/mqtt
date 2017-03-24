@@ -1,67 +1,35 @@
-var mqtt = require('mqtt')
-    , util = require('util');
+var mosca = require('mosca')
 
-mqtt.createServer(function(client) {
-    var self = this;
-    //客户端集合
-    if (!self.clients) self.clients = {};
+var ascoltatore = {
+  //using ascoltatore
+  type: 'mongo',        
+  url: 'mongodb://localhost:27017/mqtt',
+  pubsubCollection: 'ascoltatori',
+  mongo: {}
+};
 
-    //监听连接请求
-    client.on('connect', function(packet) {
-        client.connack({returnCode: 0});
-        client.id = packet.clientId;
-        client.subscriptions = [];
-        console.log("CONNECT: client id: " + client.id + "packet" + JSON.stringify(packet));
-        self.clients[client.id] = client;
+var moscaSettings = {
+  port: 1883,
+  backend: ascoltatore,
+  persistence: {
+    factory: mosca.persistence.Mongo,
+    url: 'mongodb://localhost:27017/mqtt'
+  }
+};
 
-    });
+var server = new mosca.Server(moscaSettings);
+server.on('ready', setup);
 
-    client.on('publish', function(packet) {
-        //发布者本身不接受发布信息
-        delete self.clients[client.id];
-        //对所有连接进行一次广播
-        for (var k in self.clients) {
-            console.log("publish ->"+k);
-            self.clients[k].publish({topic: packet.topic, payload: packet.payload});
-        }
-    });
+server.on('clientConnected', function(client) {
+    console.log('client connected', client.id);     
+});
 
-    client.on('subscribe', function(packet) {
-        var granted = [];
-        for (var i = 0; i < packet.subscriptions.length; i++) {
-            //消息Qos 级别
-            granted.push(packet.subscriptions[i].qos);
+// 收到消息后触发
+server.on('published', function(packet, client) {
+  console.log('Published', packet.payload);
+});
 
-        }
-
-        console.log('subscribe->' + JSON.stringify({granted: granted}) + JSON.stringify(packet));
-        client.suback({granted:granted,messageId:packet.messageId});
-
-    });
-
-    client.on('pingreq', function(packet) {
-        //util.log('pingreq!'+JSON.stringify(packet));
-        client.pingresp();
-    });
-
-    client.on('unsubscribe', function(packet){
-        console.log('unsubscribe!' + JSON.stringify(packet));
-         client.unsubscribe();
-    });
-
-    client.on('disconnect', function(packet) {
-        delete self.clients[client.id];
-        //util.log('disconnect!');
-        client.stream.end();
-    });
-
-    client.on('close', function(err) {
-        delete self.clients[client.id];
-    });
-
-    client.on('error', function(err) {
-        delete self.clients[client.id];
-        client.stream.end();
-        console.log(err);
-    });
-}).listen(1883);
+// MQTT服务端准备完成后触发
+function setup() {
+  console.log('Mosca server is up and running')
+}
